@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Карточная игра</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+  h2 { color: #e0b84e; margin: 10px 0; text-align: center; }
+  #lobby, #game { width: 100%; max-width: 480px; }
+
+  /* Лобби */
+  .lobby-box { background: #16213e; border-radius: 16px; padding: 20px; margin-top: 10px; }
+  .player-list { list-style: none; margin: 10px 0; }
+  .player-list li { padding: 8px 12px; background: #0f3460; border-radius: 8px; margin: 5px 0; }
+  .btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 12px;
+         font-size: 16px; font-weight: bold; cursor: pointer; margin: 8px 0; }
+  .btn-start { background: #e0b84e; color: #1a1a2e; }
+  .btn-play { background: #533483; color: white; font-size: 14px; }
+  .btn-take { background: #c0392b; color: white; font-size: 14px; }
+  .info { font-size: 13px; color: #aaa; text-align: center; margin: 6px 0; }
+
+  /* Игровое поле */
+  #game { display: none; }
+  .players-bar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0; }
+  .player-chip {
+    padding: 4px 12px; border-radius: 20px; font-size: 12px;
+    background: #0f3460; border: 2px solid transparent;
+  }
+  .player-chip.active { border-color: #e0b84e; color: #e0b84e; }
+  .player-chip.me { background: #533483; }
+
+  .table-area {
+    background: #145214;
+    border-radius: 16px;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px;
+    margin: 8px 0;
+  }
+  .card {
+    background: white;
+    color: #111;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 18px;
+    font-weight: bold;
+    min-width: 46px;
+    text-align: center;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.15s;
+    user-select: none;
+  }
+  .card:hover { transform: translateY(-4px); }
+  .card.trump { color: #7b2ff7; }
+  .card.cross { color: #c0392b; }
+  .card.moon { color: #2980b9; }
+  .card.sun { color: #e67e22; }
+  .card.selected { border: 3px solid #e0b84e; transform: translateY(-8px); }
+  .card.table-card { cursor: default; transform: none; }
+  .card.table-card:hover { transform: none; }
+
+  .hand-area {
+    margin: 8px 0;
+  }
+  .hand-label { font-size: 12px; color: #aaa; text-align: center; margin-bottom: 4px; }
+  .hand-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .direction-indicator {
+    text-align: center;
+    font-size: 22px;
+    margin: 4px 0;
+  }
+
+  #events {
+    background: #0d0d1a;
+    border-radius: 12px;
+    padding: 10px;
+    font-size: 12px;
+    color: #aaa;
+    max-height: 80px;
+    overflow-y: auto;
+    margin: 6px 0;
+  }
+  .event-line { padding: 2px 0; border-bottom: 1px solid #1a1a2e; }
+
+  .first-card-notice {
+    background: #533483;
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+
+  #status {
+    text-align: center;
+    font-size: 14px;
+    color: #e0b84e;
+    min-height: 24px;
+    margin: 4px 0;
+  }
+
+  .finished-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .finished-box {
+    background: #16213e;
+    border-radius: 20px;
+    padding: 30px;
+    text-align: center;
+    max-width: 300px;
+  }
+  .finished-box h2 { font-size: 28px; color: #e0b84e; }
+  .finished-box p { margin: 10px 0; color: #ccc; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <h2>🃏 Карточная игра</h2>
+  <div class="lobby-box">
+    <div class="first-card-notice" id="firstCardNotice" style="display:none"></div>
+    <div class="info" id="roomInfo">Подключение...</div>
+    <ul class="player-list" id="playerList"></ul>
+    <button class="btn btn-start" id="btnStart" onclick="startGame()">🚀 Начать игру</button>
+    <div class="info">Поделись ссылкой с друзьями чтобы они присоединились</div>
+  </div>
+</div>
+
+<div id="game">
+  <div class="players-bar" id="playersBar"></div>
+  <div class="direction-indicator" id="dirIndicator">↺ Против часовой</div>
+  <div id="firstCardBanner" class="first-card-notice" style="display:none"></div>
+  <div class="table-area" id="tableArea">
+    <span style="color:#555">Стол пуст</span>
+  </div>
+  <div id="status">Ожидание хода...</div>
+  <div class="hand-area">
+    <div class="hand-label">Ваши карты:</div>
+    <div class="hand-cards" id="handCards"></div>
+  </div>
+  <button class="btn btn-play" id="btnPlayCard" onclick="playCard()" style="display:none">▶ Сыграть карту</button>
+  <div id="events"></div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) tg.expand();
+
+const params = new URLSearchParams(window.location.search);
+const roomId = params.get('room') || 'room1';
+const myId = params.get('uid') || ('guest_' + Math.random().toString(36).slice(2,8));
+const myName = params.get('name') || 'Игрок';
+
+const WS_URL = `wss://${location.host}/ws/${roomId}/${myId}/${encodeURIComponent(myName)}`;
+let ws;
+let gameState = null;
+let selectedCardIdx = null;
+let usernames = {};
+
+function suitClass(suit) {
+  if (suit === '♚') return 'trump';
+  if (suit === '+') return 'cross';
+  if (suit === '☽') return 'moon';
+  if (suit === '☀') return 'sun';
+  return '';
+}
+
+function cardHTML(cardStr, idx, clickable=false, isSelected=false) {
+  const suit = cardStr.slice(-1);
+  const rank = cardStr.slice(0, -1);
+  const cls = suitClass(suit);
+  const sel = isSelected ? ' selected' : '';
+  const tbl = clickable ? '' : ' table-card';
+  const onclick = clickable ? `onclick="selectCard(${idx})"` : '';
+  return `<div class="card ${cls}${sel}${tbl}" ${onclick}>${rank}<br><small>${suit}</small></div>`;
+}
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    document.getElementById('roomInfo').textContent = `Комната: ${roomId}`;
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+  ws.onclose = () => {
+    setTimeout(connect, 2000);
+  };
+}
+
+function handleMessage(msg) {
+  if (msg.type === 'lobby') {
+    renderLobby(msg);
+  } else if (msg.type === 'start') {
+    usernames = msg.usernames || {};
+    gameState = msg.state;
+    showGame();
+    renderGame();
+  } else if (msg.type === 'update') {
+    usernames = msg.usernames || {};
+    gameState = msg.state;
+    renderGame();
+    renderEvents(msg.events || []);
+  } else if (msg.type === 'finished') {
+    showFinished(msg.loser_name);
+  } else if (msg.type === 'error') {
+    showStatus('❌ ' + msg.msg, true);
+  }
+}
+
+function renderLobby(msg) {
+  const list = document.getElementById('playerList');
+  list.innerHTML = msg.players.map(p =>
+    `<li>${p.name === myName ? '👤 ' : ''}${p.name}</li>`
+  ).join('');
+  document.getElementById('roomInfo').textContent =
+    `Комната: ${roomId} · Игроков: ${msg.players.length}`;
+}
+
+function showGame() {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+
+  if (gameState.first_card) {
+    document.getElementById('firstCardBanner').style.display = 'block';
+    document.getElementById('firstCardBanner').textContent =
+      `🎯 Первый ход у того, у кого есть: ${gameState.first_card}`;
+  }
+}
+
+function renderGame() {
+  if (!gameState) return;
+
+  // Игроки
+  const bar = document.getElementById('playersBar');
+  bar.innerHTML = gameState.players.map(pid => {
+    const name = usernames[pid] || pid;
+    const isActive = pid === gameState.current;
+    const isMe = pid === myId;
+    const cards = gameState.hand_sizes[pid];
+    return `<div class="player-chip ${isActive?'active':''} ${isMe?'me':''}">
+      ${isActive ? '▶' : ''} ${name} [${cards}]
+    </div>`;
+  }).join('');
+
+  // Направление
+  const dir = document.getElementById('dirIndicator');
+  dir.textContent = gameState.direction === -1 ? '↺ Против часовой' : '↻ По часовой';
+
+  // Стол
+  const tableArea = document.getElementById('tableArea');
+  if (gameState.table.length === 0) {
+    tableArea.innerHTML = '<span style="color:#555">Стол пуст</span>';
+  } else {
+    tableArea.innerHTML = gameState.table.map(e =>
+      cardHTML(e.card, -1, false)
+    ).join('');
+  }
+
+  // Рука
+  const handCards = document.getElementById('handCards');
+  const hand = gameState.hand || [];
+  handCards.innerHTML = hand.map((c, i) =>
+    cardHTML(c, i, true, i === selectedCardIdx)
+  ).join('');
+
+  // Статус
+  const isMyTurn = gameState.current === myId;
+  const statusEl = document.getElementById('status');
+  const btnPlay = document.getElementById('btnPlayCard');
+  if (isMyTurn) {
+    statusEl.textContent = '⭐ Ваш ход!';
+    btnPlay.style.display = selectedCardIdx !== null ? 'block' : 'none';
+  } else {
+    const name = usernames[gameState.current] || gameState.current;
+    statusEl.textContent = `⏳ Ход: ${name}`;
+    btnPlay.style.display = 'none';
+  }
+}
+
+function selectCard(idx) {
+  if (gameState?.current !== myId) return;
+  selectedCardIdx = (selectedCardIdx === idx) ? null : idx;
+  renderGame();
+  document.getElementById('btnPlayCard').style.display =
+    selectedCardIdx !== null ? 'block' : 'none';
+}
+
+function playCard() {
+  if (selectedCardIdx === null) return;
+  ws.send(JSON.stringify({ action: 'play', card_idx: selectedCardIdx }));
+  selectedCardIdx = null;
+}
+
+function startGame() {
+  ws.send(JSON.stringify({ action: 'start' }));
+}
+
+function renderEvents(events) {
+  const el = document.getElementById('events');
+  events.forEach(ev => {
+    const line = document.createElement('div');
+    line.className = 'event-line';
+    const pname = ev.player ? (usernames[ev.player] || ev.player) : '';
+    line.textContent = `${pname ? pname + ': ' : ''}${ev.msg || ev.type} ${ev.card || ''}`;
+    el.prepend(line);
+  });
+  while (el.children.length > 20) el.lastChild.remove();
+}
+
+function showStatus(msg, isErr=false) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = isErr ? '#e74c3c' : '#e0b84e';
+}
+
+function showFinished(loserName) {
+  const overlay = document.createElement('div');
+  overlay.className = 'finished-overlay';
+  overlay.innerHTML = `
+    <div class="finished-box">
+      <h2>🏁 Игра окончена!</h2>
+      <p>Проиграл: <strong>${loserName}</strong></p>
+      <button class="btn btn-start" onclick="location.reload()">🔄 Новая игра</button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+connect();
+</script>
+</body>
+</html>
